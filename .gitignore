@@ -1,6 +1,7 @@
 .venv/
 .env
 .DS_Store
+workspace/
 
 # Ignore evaluation scripts (alfred)
 alfred_evaluation/
