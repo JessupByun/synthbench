@@ -3,7 +3,6 @@
 ## Research Overview
 
 - **Undergraduate Researcher:** Jessup Byun, UCLA  
-- **Start Date:** September 2024  
 - **Research Mentor:** Xiaofeng Lin, PhD Statistics, UCLA  
 - **Faculty Advisor:** Prof. Guang Cheng, UCLA Trustworthy AI Lab  
 
