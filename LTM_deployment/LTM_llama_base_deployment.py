@@ -5,16 +5,16 @@ from dotenv import load_dotenv
 from groq import Groq
 
 # Load the real data
-data_csv = "data/real_data/churn/Churn_Modelling.csv"
+data_csv = "data/real_data/Insurance/insurance.csv"
 data = pd.read_csv(data_csv)
 
 # Split the data into train and test sets
 train_data, test_data = train_test_split(data, test_size=0.8, random_state=42)
-test_data.to_csv('data/real_data/churn/churn_modeling_test.csv', index=False)
-train_data.to_csv('data/real_data/churn/churn_modeling_train.csv', index=False) # Will include the entire training data, which will then be sampled in n sample sizes below.
+test_data.to_csv('data/real_data/Insurance/insurance_test.csv', index=True)
+train_data.to_csv('data/real_data/Insurance/insurance_train.csv', index=False) # Will include the entire training data, which will then be sampled in n sample sizes below.
 
 # Define the n sample size of train_data
-train_data = train_data.sample(200, random_state = 42)
+train_data = train_data.sample(200)
 
 # Define temperature parameter for model (controls randomness and diversity, as temp -> 0, model becomes more deterministic and repetitive)
 temperature = 1
@@ -41,27 +41,20 @@ Your goal is to produce data which mirrors the given examples in causal structur
 
 I will give you real examples first.
 
-Context: Leverage your knowledge about customer churn, banking, and demographics to generate 200 realistic but diverse samples. 
+Context: Leverage your knowledge about health, demographics, and insurance to generate 1000 realistic but diverse samples. 
 Output the data in a csv format where I can directly copy and paste into a csv.
 
 Example data: {data}
 
 The output should use the following schema:
 
-"RowNumber": integer // feature column for row number
-"CustomerId": integer // feature column for the customer ID
-"Surname": string // feature column for the surname of the customer
-"CreditScore": integer // feature column for the customer's credit score
-"Geography": string // feature column for geography, possible values: "France", "Germany", "Spain"
-"Gender": string // feature column for gender, possible values: "Male", "Female"
-"Age": integer // feature column for the customer's age
-"Tenure": integer // feature column for the number of years the customer has been with the bank
-"Balance": float // feature column for the customer's bank balance
-"NumOfProducts": integer // feature column for the number of products the customer has
-"HasCrCard": integer // feature column indicating if the customer has a credit card (1 for yes, 0 for no)
-"IsActiveMember": integer // feature column indicating if the customer is an active member (1 for yes, 0 for no)
-"EstimatedSalary": float // feature column for the customer's estimated salary
-"Exited": integer // target label column, 1 for customers who exited the bank, 0 for those who stayed
+"age": integer // feature column for the person's age
+"sex": string // feature column, male or female
+"bmi": float // feature column for body mass index
+"children": integer // feature column for number of children
+"smoker": string // feature column, yes or no for smoking status
+"region": string // feature column for region (northeast, southeast, southwest, northwest)
+"charges": float // label column for insurance charges
 
 DO NOT COPY THE EXAMPLES but generate realistic but new and diverse samples which have the correct label conditioned on the features.
 """
@@ -74,45 +67,31 @@ Your goal is to produce data which mirrors the given examples in causal structur
 
 I will give you real examples first.
 
-Context: Leverage your knowledge about customer churn, banking, and demographics to generate 200 realistic but diverse samples. 
+Context: Leverage your knowledge about health, demographics, and insurance to generate 200 realistic but diverse samples. 
 Output the data in a csv format where I can directly copy and paste into a csv.
 
 Example data: {data}
 
 The output should use the following schema:
 
-"RowNumber": integer // feature column for row number
-"CustomerId": integer // feature column for the customer ID
-"Surname": string // feature column for the surname of the customer
-"CreditScore": integer // feature column for the customer's credit score
-"Geography": string // feature column for geography, possible values: "France", "Germany", "Spain"
-"Gender": string // feature column for gender, possible values: "Male", "Female"
-"Age": integer // feature column for the customer's age
-"Tenure": integer // feature column for the number of years the customer has been with the bank
-"Balance": float // feature column for the customer's bank balance
-"NumOfProducts": integer // feature column for the number of products the customer has
-"HasCrCard": integer // feature column indicating if the customer has a credit card (1 for yes, 0 for no)
-"IsActiveMember": integer // feature column indicating if the customer is an active member (1 for yes, 0 for no)
-"EstimatedSalary": float // feature column for the customer's estimated salary
-"Exited": integer // target label column, 1 for customers who exited the bank, 0 for those who stayed
+"age": integer // feature column for the person's age
+"sex": string // feature column, possible values: "male", "female"
+"bmi": float // feature column for body mass index
+"children": integer // feature column for the number of children
+"smoker": string // feature column, possible values: "yes", "no"
+"region": string // feature column for region, possible values: "northeast", "southeast", "southwest", "northwest"
+"charges": float // target label column for insurance charges
 
 Here are detailed summary stats that you should also use:
 
 ,count,unique,top,freq,mean,std,min,25%,50%,75%,max
-RowNumber,10000.0,,,,5000.5,2886.8956799071675,1.0,2500.75,5000.5,7500.25,10000.0
-CustomerId,10000.0,,,,15690940.5694,71936.1861227489,15565701.0,15628528.25,15690738.0,15753233.75,15815690.0
-Surname,10000,2932,Smith,32,,,,,,,
-CreditScore,10000.0,,,,650.5288,96.65329873613035,350.0,584.0,652.0,718.0,850.0
-Geography,10000,3,France,5014,,,,,,,
-Gender,10000,2,Male,5457,,,,,,,
-Age,10000.0,,,,38.9218,10.487806451704609,18.0,32.0,37.0,44.0,92.0
-Tenure,10000.0,,,,5.0128,2.8921743770496837,0.0,3.0,5.0,7.0,10.0
-Balance,10000.0,,,,76485.889288,62397.405202385955,0.0,0.0,97198.54000000001,127644.24,250898.09
-NumOfProducts,10000.0,,,,1.5302,0.5816543579989906,1.0,1.0,1.0,2.0,4.0
-HasCrCard,10000.0,,,,0.7055,0.4558404644751333,0.0,0.0,1.0,1.0,1.0
-IsActiveMember,10000.0,,,,0.5151,0.49979692845891893,0.0,0.0,1.0,1.0,1.0
-EstimatedSalary,10000.0,,,,100090.239881,57510.49281769816,11.58,51002.11,100193.915,149388.2475,199992.48
-Exited,10000.0,,,,0.2037,0.4027685839948609,0.0,0.0,0.0,0.0,1.0
+age,1338.0,,,,39.20702541106129,14.049960379216154,18.0,27.0,39.0,51.0,64.0
+sex,1338,2,male,676,,,,,,,
+bmi,1338.0,,,,30.66339686098655,6.098186911679014,15.96,26.29625,30.4,34.69375,53.13
+children,1338.0,,,,1.0949177877429,1.205492739781914,0.0,0.0,1.0,2.0,5.0
+smoker,1338,2,no,1064,,,,,,,
+region,1338,4,southeast,364,,,,,,,
+charges,1338.0,,,,13270.422265141257,12110.011236694001,1121.8739,4740.28715,9382.033,16639.912515,63770.42801
 
 DO NOT COPY THE EXAMPLES but generate realistic but new and diverse samples which have the correct label conditioned on the features.
 """
