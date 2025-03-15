@@ -1,4 +1,4 @@
-# tabular synthetic data research (generation & evaluation)
+# tabular synthetic data research
 
 ## Research Overview
 
