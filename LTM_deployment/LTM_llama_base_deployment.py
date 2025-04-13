@@ -12,39 +12,104 @@ if not api_key:
     raise ValueError("GROQ_API_KEY not found in .env file.")
 client = groq.Groq(api_key=api_key)
 
-# Prompt template includes dataset name and full CSV data.
+# Prompt template includes dataset name, summary statistcs, column names, and full CSV data.
 prompt_template = (
     """
     System role: You are a tabular synthetic data generation model.
 
-    Your goal is to produce data that mirrors the given examples in causal structure and feature and label distributions, 
-    while producing as diverse samples as possible.
+    Your goal is to produce data that mirrors the given examples in causal structure and feature and label distributions, while producing as diverse samples as possible.
 
     Context: Leverage your prior knowledge and in-context learning capabilities to generate realistic but diverse samples.
     Output the data in CSV format.
 
     Dataset name: {dataset_name}
+    Column names: {col_names}
+    Summary statistics and information about numerical and categorical columns: {summary_stats}
     Here is the CSV of the full data: {data}
-    Please generate synthetic data for the dataset. Make sure to generate the same number of rows as the original data. Also make sure to replicate the exact same column names. 
-    Treat the rightmost column as the target, and return your entire response as a JSON object with the key 'synthetic_data' 
-    containing a CSV string of the generated data.
+    Please generate {batch_size} rows of synthetic data for the dataset. 
+
+    Treat the rightmost column as the target, and return your entire response as a JSON object with the key 'synthetic_data' containing a CSV string of the generated data.
     Do not include any additional text.
     """
 )
 
-def generate_synthetic_data_llama(df, dataset_name, model_name, model_temperature):
+def get_summary_statistics(df):
+    """
+    Computes a comprehensive set of summary statistics for each column in the DataFrame.
+    
+    For numeric columns, it calculates:
+      - mean, median, mode (first mode value if multiple), standard deviation, min, max,
+      - 25th and 75th percentiles,
+      - number of unique values.
+      
+    For non-numeric (categorical) columns, it calculates:
+      - the number of unique values,
+      - the most common value (mode),
+      - and the full value counts as a dictionary.
+    
+    Returns:
+        A JSON string representation of the summary statistics.
+    """
+    stats = {}
+    for col in df.columns:
+        if pd.api.types.is_numeric_dtype(df[col]):
+            # Calculate basic statistics for numeric columns.
+            mode_val = df[col].mode().iloc[0] if not df[col].mode().empty else None
+            stats[col] = {
+                "mean": float(df[col].mean()),
+                "median": float(df[col].median()),
+                "mode": float(mode_val) if pd.notnull(mode_val) else None,
+                "std": float(df[col].std()),
+                "min": float(df[col].min()),
+                "max": float(df[col].max()),
+                "25%": float(df[col].quantile(0.25)),
+                "75%": float(df[col].quantile(0.75)),
+                "unique_count": int(df[col].nunique())
+            }
+        else:
+            # For non-numeric columns, provide the number of unique values, the mode, and all value counts.
+            mode_val = df[col].mode().iloc[0] if not df[col].mode().empty else None
+            value_counts = df[col].value_counts().to_dict()
+            # Convert keys to strings in case the non-numeric values are not string type.
+            value_counts = {str(k): int(v) for k, v in value_counts.items()}
+            stats[col] = {
+                "unique_count": int(df[col].nunique()),
+                "mode": str(mode_val) if mode_val is not None else None,
+                "value_counts": value_counts
+            }
+    return json.dumps(stats, indent=2)
+
+def generate_synthetic_data_llama(df, dataset_name, model_name, batch_size, model_temperature):
     """
     Generates synthetic data using the Groq API and an LLM model.
-    Builds a prompt that includes the entire CSV representation of the current batch (up to 200 rows)
-    Calls the Groq API using the specified model. The expected response is a JSON object with a key "synthetic_data" that contains a CSV string.
+    
+    This function builds a prompt that includes:
+      - The dataset name
+      - The full list of column names
+      - The summary statistics for the DataFrame (numeric columns)
+      - The entire CSV representation of the current batch (up to 200 rows)
+    It then calls the Groq API using the specified model and expects a JSON object with the key 
+    "synthetic_data" that contains the synthetic CSV string.
     
     Returns:
         The synthetic CSV string if successful, or None.
     """
     # Convert the entire batch to a CSV string.
     data_string = df.to_csv(index=False)
-    prompt = prompt_template.format(data=data_string, dataset_name=dataset_name)
     
+    # Get column names and summary statistics.
+    col_names = ", ".join(df.columns)
+    summary_stats = get_summary_statistics(df)
+
+    # Build the prompt using the template.
+    prompt = prompt_template.format(
+        data=data_string, 
+        dataset_name=dataset_name,
+        col_names=col_names,
+        summary_stats=summary_stats,
+        batch_size = batch_size
+    )
+
     try:
         response = client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
@@ -83,7 +148,7 @@ def process_csv_file_llama(input_csv, output_csv, dataset_name, model_name, mode
     synthetic_df_list = []
     for start in range(0, n_rows, batch_size):
         batch_df = df.iloc[start:start+batch_size]
-        synthetic_csv = generate_synthetic_data_llama(batch_df, dataset_name, model_name, model_temperature)
+        synthetic_csv = generate_synthetic_data_llama(batch_df, dataset_name, model_name, batch_size, model_temperature)
         if synthetic_csv is None:
             print(f"No synthetic data returned for batch starting at row {start}.")
             continue
