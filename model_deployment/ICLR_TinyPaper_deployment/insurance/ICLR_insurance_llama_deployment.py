@@ -68,7 +68,7 @@ Your goal is to produce data which mirrors the given examples in causal structur
 I will give you real examples first.
 
 Context: Leverage your knowledge about health, demographics, and insurance to generate 200 realistic but diverse samples. 
-Output the data in a csv format where I can directly copy and paste into a csv.
+Output the data in a JSON format.
 
 Example data: {data}
 
@@ -111,7 +111,7 @@ def generate_synthetic_data(model_name, data):
                 }
             ],
             model=model_name,
-            #response_format={"type": "json_object"} Turn on for JSON beta mode
+            response_format={"type": "json_object"}, #Turn on for JSON beta mode
             temperature=temperature
         )
         

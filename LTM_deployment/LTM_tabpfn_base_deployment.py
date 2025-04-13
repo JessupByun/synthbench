@@ -101,7 +101,6 @@ def process_csv_file(input_csv, output_csv, batch_size=200):
     Each chunk is processed, then the results are concatenated.
     """
     df = pd.read_csv(input_csv)
-    df = df.sample(frac=1, random_state=42).reset_index(drop=True)
     n_rows = df.shape[0]
 
     if n_rows <= batch_size:
