@@ -20,7 +20,7 @@ prompt_template = (
     Your goal is to produce data that mirrors the given examples in causal structure and feature and label distributions, while producing as diverse samples as possible.
 
     Context: Leverage your prior knowledge and in-context learning capabilities to generate realistic but diverse samples.
-    Output the data in CSV format.
+    Output the data in JSON format that will be intended for csv formatting.
 
     Dataset name: {dataset_name}
     Column names: {col_names}
@@ -53,7 +53,6 @@ def get_summary_statistics(df):
     stats = {}
     for col in df.columns:
         if pd.api.types.is_numeric_dtype(df[col]):
-            # Calculate basic statistics for numeric columns.
             mode_val = df[col].mode().iloc[0] if not df[col].mode().empty else None
             stats[col] = {
                 "mean": float(df[col].mean()),
@@ -67,10 +66,8 @@ def get_summary_statistics(df):
                 "unique_count": int(df[col].nunique())
             }
         else:
-            # For non-numeric columns, provide the number of unique values, the mode, and all value counts.
             mode_val = df[col].mode().iloc[0] if not df[col].mode().empty else None
             value_counts = df[col].value_counts().to_dict()
-            # Convert keys to strings in case the non-numeric values are not string type.
             value_counts = {str(k): int(v) for k, v in value_counts.items()}
             stats[col] = {
                 "unique_count": int(df[col].nunique()),
@@ -79,57 +76,55 @@ def get_summary_statistics(df):
             }
     return json.dumps(stats, indent=2)
 
+def extract_required_n_from_filename(filename: str) -> int:
+    """
+    From something like "abalone--train--64-seed1.csv" or "iris--train--150.csv",
+    extract the number after "--train--" and before "-seed" (if present).
+    """
+    base = os.path.splitext(os.path.basename(filename))[0]
+    if "--train--" not in base:
+        return None
+    part = base.split("--train--", 1)[1]
+    if "-seed" in part:
+        num_str = part.split("-seed", 1)[0]
+    else:
+        num_str = part
+    try:
+        return int(num_str)
+    except:
+        return None
+
 def generate_synthetic_data_llama(df, dataset_name, model_name, batch_size, model_temperature):
     """
     Generates synthetic data using the Groq API and an LLM model.
     
-    This function builds a prompt that includes:
-      - The dataset name
-      - The full list of column names
-      - The summary statistics for the DataFrame (numeric columns)
-      - The entire CSV representation of the current batch (up to 200 rows)
-    It then calls the Groq API using the specified model and expects a JSON object with the key 
-    "synthetic_data" that contains the synthetic CSV string.
-    
-    Returns:
-        The synthetic CSV string if successful, or None.
+    Returns the synthetic CSV string if successful, else None.
     """
-    # Convert the entire batch to a CSV string.
     data_string = df.to_csv(index=False)
-    
-    # Get column names and summary statistics.
     col_names = ", ".join(df.columns)
     summary_stats = get_summary_statistics(df)
 
-    # Build the prompt using the template.
     prompt = prompt_template.format(
-        data=data_string, 
+        data=data_string,
         dataset_name=dataset_name,
         col_names=col_names,
         summary_stats=summary_stats,
-        batch_size = batch_size
+        batch_size=batch_size
     )
-
+    
     try:
         response = client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
             model=model_name,
-            response_format={"type": "json_object"},  # Enable JSON output mode.
+            response_format={"type": "json_object"},
             temperature=model_temperature
         )
-        #print("Full Response:", response)
-        
         if response.choices and len(response.choices) > 0:
             generated_text = response.choices[0].message.content
+            parsed = json.loads(generated_text)
+            return parsed.get("synthetic_data", None)
         else:
             print("No choices were returned in the response.")
-            return None
-
-        parsed = json.loads(generated_text)
-        if "synthetic_data" in parsed:
-            return parsed["synthetic_data"]
-        else:
-            print("Returned JSON does not contain 'synthetic_data' key.")
             return None
     except Exception as e:
         print(f"Error generating data with model {model_name}: {e}")
@@ -137,102 +132,125 @@ def generate_synthetic_data_llama(df, dataset_name, model_name, batch_size, mode
 
 def process_csv_file_llama(input_csv, output_csv, dataset_name, model_name, model_temperature, batch_size=200):
     """
-    Loads a CSV file and shuffles it (using seed=42). If it has more than batch_size rows, partitions it into chunks.
-    For each chunk, the entire batch is converted to CSV and synthetic data is generated via generate_synthetic_data_llama.
-    The resulting synthetic DataFrames are concatenated and saved to output_csv.
+    Loads, shuffles, batches, generates, then **validates row count** and re-prompts if needed.
     """
     df = pd.read_csv(input_csv)
     df = df.sample(frac=1, random_state=42).reset_index(drop=True)
-    n_rows = df.shape[0]
-    
+
+    # extract required number of rows from filename
+    required_n = extract_required_n_from_filename(input_csv) or df.shape[0]
+
     synthetic_df_list = []
-    for start in range(0, n_rows, batch_size):
+    for start in range(0, df.shape[0], batch_size):
         batch_df = df.iloc[start:start+batch_size]
-        synthetic_csv = generate_synthetic_data_llama(batch_df, dataset_name, model_name, batch_size, model_temperature)
+        synthetic_csv = generate_synthetic_data_llama(
+            batch_df, dataset_name, model_name, batch_size, model_temperature
+        )
         if synthetic_csv is None:
             print(f"No synthetic data returned for batch starting at row {start}.")
             continue
         try:
-            batch_synthetic_df = pd.read_csv(StringIO(synthetic_csv))
+            batch_synthetic = pd.read_csv(StringIO(synthetic_csv))
+            synthetic_df_list.append(batch_synthetic)
         except Exception as e:
-            print(f"Error converting synthetic CSV to DataFrame for batch starting at row {start}: {e}")
-            continue
-        synthetic_df_list.append(batch_synthetic_df)
-    
-    if len(synthetic_df_list) == 0:
+            print(f"Error parsing batch at row {start}: {e}")
+
+    if not synthetic_df_list:
         print("No synthetic data generated for file:", input_csv)
         return
-    
+
     synthetic_df = pd.concat(synthetic_df_list, ignore_index=True)
-    if synthetic_df.shape[0] > n_rows:
-        synthetic_df = synthetic_df.iloc[:n_rows, :]
-    if synthetic_df.shape[0] != n_rows:
-        print(f"[WARNING] Synthetic row count ({synthetic_df.shape[0]}) differs from original ({n_rows}).")
-    
+
+    # **Check & refill** until we reach required_n
+    current_n = synthetic_df.shape[0]
+    if current_n < required_n:
+        print(f"[INFO] Only {current_n}/{required_n} rows generated—reprompting for {required_n - current_n} more.")
+        # use first batch as context for reprompt
+        context_df = df.iloc[:batch_size]
+        while current_n < required_n:
+            to_gen = min(required_n - current_n, batch_size)
+            extra_csv = generate_synthetic_data_llama(
+                context_df, dataset_name, model_name, to_gen, model_temperature
+            )
+            if not extra_csv:
+                print("Reprompt failed—stopping attempts.")
+                break
+            try:
+                extra_df = pd.read_csv(StringIO(extra_csv))
+                synthetic_df = pd.concat([synthetic_df, extra_df], ignore_index=True)
+                current_n = synthetic_df.shape[0]
+            except Exception as e:
+                print(f"Error parsing reprompt batch: {e}")
+                break
+
+    # **Finally**, truncate or warn if mismatched
+    if synthetic_df.shape[0] > required_n:
+        synthetic_df = synthetic_df.iloc[:required_n]
+    if synthetic_df.shape[0] != required_n:
+        print(f"[WARNING] Final synthetic row count {synthetic_df.shape[0]} != required {required_n}")
+
     synthetic_df.to_csv(output_csv, index=False)
     print(f"[INFO] Synthetic data saved to {output_csv}")
 
 def process_dataset_llama(dataset_name, generator_name, model_name, model_temperature, batch_size=200):
     """
-    Processes all CSV files found in:
-      LTM_data/LTM_real_data/{dataset_name}/train/
-    Synthetic CSVs are saved under:
-      LTM_data/LTM_synthetic_data/LTM_llama_synthetic_data/synth_{dataset_name}/
-    Each output file is named:
-      {original_csv_filename}_{generator_name}_default_0.csv
-
-    After processing, validation is run using the provided validation script.
+    Processes all CSVs in the train folder, then runs the validation script.
     """
     real_data_path = os.path.join("LTM_data", "LTM_real_data", dataset_name)
     train_folder = os.path.join(real_data_path, "train")
     if not os.path.isdir(train_folder):
         print(f"[ERROR] Train folder not found: {train_folder}")
         return
-    
-    synthetic_folder = os.path.join("LTM_data", "LTM_synthetic_data", "LTM_llama_synthetic_data", f"synth_{dataset_name}")
+
+    synthetic_folder = os.path.join(
+        "LTM_data", "LTM_synthetic_data", "LTM_llama_synthetic_data", f"synth_{dataset_name}"
+    )
     os.makedirs(synthetic_folder, exist_ok=True)
-    
+
     csv_files = [f for f in os.listdir(train_folder) if f.lower().endswith(".csv")]
     if not csv_files:
         print(f"[WARNING] No CSV files found in {train_folder}.")
         return
-    
+
     for csv_file in csv_files:
-        input_csv_path = os.path.join(train_folder, csv_file)
-        base_name = os.path.splitext(csv_file)[0]
-        output_csv_name = f"{base_name}_{generator_name}_default_0.csv"
-        output_csv_path = os.path.join(synthetic_folder, output_csv_name)
-        print(f"[INFO] Processing: {input_csv_path} -> {output_csv_path}")
-        process_csv_file_llama(input_csv_path, output_csv_path, dataset_name, model_name, model_temperature, batch_size=batch_size)
-    
-    # Run validation using the provided validation script's structure.
+        input_csv = os.path.join(train_folder, csv_file)
+        base = os.path.splitext(csv_file)[0]
+        output_csv = os.path.join(synthetic_folder, f"{base}_{generator_name}_default_0.csv")
+        print(f"[INFO] Processing: {input_csv} -> {output_csv}")
+        process_csv_file_llama(
+            input_csv, output_csv,
+            dataset_name, model_name, model_temperature,
+            batch_size=batch_size
+        )
+
+    # Run validation
     try:
         from validate_synthetic_data import validate_synthetic_data, logger
     except ImportError as e:
         print(f"Error importing validation function: {e}")
         return
-    
-    # Build arguments as if they were parsed.
+
     args = {
-        "real_data_dir": os.path.join("LTM_data", "LTM_real_data", dataset_name, "train"),
+        "real_data_dir": os.path.join(real_data_path, "train"),
         "synthetic_data_dir": synthetic_folder,
         "output_file": os.path.join(synthetic_folder, f"{dataset_name}_validation_results.json")
     }
-    
-    validation_results = validate_synthetic_data(args["real_data_dir"], args["synthetic_data_dir"])
-    
-    # Print summary.
-    passed = sum(1 for result in validation_results if result["validation_passed"])
+
+    validation_results = validate_synthetic_data(
+        args["real_data_dir"],
+        args["synthetic_data_dir"]
+    )
+
+    passed = sum(1 for r in validation_results if r["validation_passed"])
     total = len(validation_results)
     logger.info(f"Validation complete: {passed}/{total} synthetic datasets passed all checks")
-    
-    for result in validation_results:
-        if not result["validation_passed"]:
-            logger.warning(f"Issues with {result['synthetic_file']}:")
-            for issue in result["issues"]:
+
+    for r in validation_results:
+        if not r["validation_passed"]:
+            logger.warning(f"Issues with {r['synthetic_file']}:")
+            for issue in r["issues"]:
                 logger.warning(f"  - {issue}")
-    
-    # Save validation results.
+
     try:
         with open(args["output_file"], "w") as f:
             json.dump(validation_results, f, indent=2)
@@ -244,10 +262,16 @@ def main():
     dataset_name = "abalone"
     generator_name = "llama"
     model_name = "llama-3.3-70b-versatile"
-    model_temperature = 1.0 # Leave as 1.0 for highest diversity
-    batch_size = 200
+    model_temperature = 1.0  # Leave as 1.0 for highest diversity
+    batch_size = 32
 
-    process_dataset_llama(dataset_name, generator_name=generator_name, model_name=model_name, model_temperature=model_temperature, batch_size=batch_size)
+    process_dataset_llama(
+        dataset_name,
+        generator_name=generator_name,
+        model_name=model_name,
+        model_temperature=model_temperature,
+        batch_size=batch_size
+    )
 
 if __name__ == "__main__":
     main()
