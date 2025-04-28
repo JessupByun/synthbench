@@ -157,5 +157,5 @@ def process_dataset_tabpfn(dataset_name, generator_name, batch_size):
         logger.error(f"Error saving validation results: {e}")
 
 if __name__ == "__main__":
-    dataset_name = "airfoil-self-noise"
+    dataset_name = "abalone"
     process_dataset_tabpfn(dataset_name, generator_name="tabpfn", batch_size=200)
