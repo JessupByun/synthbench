@@ -137,4 +137,4 @@ def process_dataset_tabpfn(dataset_name, generator_name="tabpfn", batch_size=200
 
 if __name__ == "__main__":
     # change to any of your datasets
-    process_dataset_tabpfn("airfoil-self-noise", generator_name="tabpfn", batch_size=200)
+    process_dataset_tabpfn("auction-verification", generator_name="tabpfn", batch_size=200)

@@ -107,13 +107,16 @@ def process_dataset_genmia(dataset_name: str, generator_name: str):
 
         # Run attacks & compute ROC AUC manually
         results = {}
+
         for attacker in attackers:
-            scores, labels = attacker.attack(mem, non_mem, synth, ref)
-            
-            # Evaluate the attack using the ROC metric.
-            eval_results = attacker.eval(scores, labels, metrics=['roc'])
-    
-            # Save the evaluation results with the attacker name as key.
+            raw_scores, raw_labels = attacker.attack(mem, non_mem, synth, ref)
+
+            # 1) If necessary, binarize/cast your ground-truth labels
+            true_labels = (raw_labels > 0.5).astype(int)
+
+            # 2) Pass the proper (y_true, y_score) order into eval()
+            eval_results = attacker.eval(true_labels, raw_scores, metrics=['roc'])
+
             results[attacker.name] = eval_results
 
         # Save results

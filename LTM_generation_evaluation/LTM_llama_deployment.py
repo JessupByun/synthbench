@@ -1,6 +1,7 @@
 import os
 import json
 import pandas as pd
+import time
 from io import StringIO
 from dotenv import load_dotenv
 import groq
@@ -142,19 +143,34 @@ def process_csv_file_llama(input_csv, output_csv, dataset_name, model_name, mode
     synthetic_df_list = []
     for start in range(0, df.shape[0], batch_size):
         batch_df = df.iloc[start:start+batch_size]
-        # context_df remains this same batch for reprompts
         context_df = batch_df
-        synthetic_csv = generate_synthetic_data_llama(
-            batch_df, dataset_name, model_name, batch_size, model_temperature
-        )
-        if synthetic_csv is None:
-            print(f"No synthetic data returned for batch starting at row {start}.")
-            continue
-        try:
-            batch_synthetic = pd.read_csv(StringIO(synthetic_csv))
+
+        # keep trying until we get a valid, non-empty DataFrame
+        while True:
+            synthetic_csv = generate_synthetic_data_llama(
+                batch_df, dataset_name, model_name, batch_size, model_temperature
+            )
+
+            if not synthetic_csv:
+                print(f"[WARN] No synthetic data for batch starting at {start}, retrying…")
+                time.sleep(1)
+                continue
+
+            try:
+                batch_synthetic = pd.read_csv(StringIO(synthetic_csv))
+            except Exception as e:
+                print(f"[ERROR] Couldn't parse CSV for batch at {start}: {e}, retrying…")
+                time.sleep(1)
+                continue
+
+            if batch_synthetic.empty:
+                print(f"[WARN] Empty DataFrame for batch at {start}, retrying…")
+                time.sleep(1)
+                continue
+
+            # success!
             synthetic_df_list.append(batch_synthetic)
-        except Exception as e:
-            print(f"Error parsing batch at row {start}: {e}")
+            break
 
     if not synthetic_df_list:
         print("No synthetic data generated for file:", input_csv)
@@ -164,7 +180,7 @@ def process_csv_file_llama(input_csv, output_csv, dataset_name, model_name, mode
 
     # refill loop: only retry up to 3 times, and require actual new rows
     attempts = 0
-    max_attempts = 3
+    max_attempts = 5
     while synthetic_df.shape[0] < required_n and attempts < max_attempts:
         needed = required_n - synthetic_df.shape[0]
         print(f"[INFO] Reprompting for {needed} more rows (attempt {attempts+1}/{max_attempts})")
@@ -266,11 +282,11 @@ def process_dataset_llama(dataset_name, generator_name, model_name, model_temper
         logger.error(f"Error saving validation results: {e}")
 
 def main():
-    dataset_name = "auction-verification"
+    dataset_name = "fifa"
     generator_name = "llama"
     model_name = "llama-3.3-70b-versatile"
     model_temperature = 1.0  # Leave as 1.0 for highest diversity
-    batch_size = 64
+    batch_size = 100
 
     process_dataset_llama(
         dataset_name,
