@@ -4,10 +4,6 @@
 .DS_Store
 workspace/
 
-# Ignore evaluation scripts (alfred)
-alfred_evaluation/
-Gen_MIA/
-
 # Ignore private datasets
 data/real_data/private_combined_df_cty_week2
 data/real_data/private_labMergeDemo1Trimmed
