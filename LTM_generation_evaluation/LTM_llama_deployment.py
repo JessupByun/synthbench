@@ -12,7 +12,7 @@ if not api_key:
     raise ValueError("GROQ_API_KEY not found in .env file.")
 client = groq.Groq(api_key=api_key)
 
-# Prompt template includes dataset name, summary statistcs, column names, and full CSV data.
+# Prompt template includes dataset name, summary statistics, column names, and full CSV data.
 prompt_template = (
     """
     System role: You are a tabular synthetic data generation model.
@@ -132,17 +132,18 @@ def generate_synthetic_data_llama(df, dataset_name, model_name, batch_size, mode
 
 def process_csv_file_llama(input_csv, output_csv, dataset_name, model_name, model_temperature, batch_size=200):
     """
-    Loads, shuffles, batches, generates, then **validates row count** and re-prompts if needed.
+    Loads, shuffles, batches, generates, then validates row count and re-prompts if needed.
     """
     df = pd.read_csv(input_csv)
     df = df.sample(frac=1, random_state=42).reset_index(drop=True)
 
-    # extract required number of rows from filename
     required_n = extract_required_n_from_filename(input_csv) or df.shape[0]
 
     synthetic_df_list = []
     for start in range(0, df.shape[0], batch_size):
         batch_df = df.iloc[start:start+batch_size]
+        # context_df remains this same batch for reprompts
+        context_df = batch_df
         synthetic_csv = generate_synthetic_data_llama(
             batch_df, dataset_name, model_name, batch_size, model_temperature
         )
@@ -161,33 +162,39 @@ def process_csv_file_llama(input_csv, output_csv, dataset_name, model_name, mode
 
     synthetic_df = pd.concat(synthetic_df_list, ignore_index=True)
 
-    # **Check & refill** until we reach required_n
-    current_n = synthetic_df.shape[0]
-    if current_n < required_n:
-        print(f"[INFO] Only {current_n}/{required_n} rows generated—reprompting for {required_n - current_n} more.")
-        # use first batch as context for reprompt
-        context_df = df.iloc[:batch_size]
-        while current_n < required_n:
-            to_gen = min(required_n - current_n, batch_size)
-            extra_csv = generate_synthetic_data_llama(
-                context_df, dataset_name, model_name, to_gen, model_temperature
-            )
-            if not extra_csv:
-                print("Reprompt failed—stopping attempts.")
-                break
-            try:
-                extra_df = pd.read_csv(StringIO(extra_csv))
-                synthetic_df = pd.concat([synthetic_df, extra_df], ignore_index=True)
-                current_n = synthetic_df.shape[0]
-            except Exception as e:
-                print(f"Error parsing reprompt batch: {e}")
-                break
+    # refill loop: only retry up to 3 times, and require actual new rows
+    attempts = 0
+    max_attempts = 3
+    while synthetic_df.shape[0] < required_n and attempts < max_attempts:
+        needed = required_n - synthetic_df.shape[0]
+        print(f"[INFO] Reprompting for {needed} more rows (attempt {attempts+1}/{max_attempts})")
+        extra_csv = generate_synthetic_data_llama(
+            context_df, dataset_name, model_name, min(needed, batch_size), model_temperature
+        )
+        if not extra_csv:
+            print("[WARN] No data returned on reprompt, aborting.")
+            break
+        try:
+            extra_df = pd.read_csv(StringIO(extra_csv))
+        except Exception as e:
+            print(f"[ERROR] Couldn't parse reprompt batch: {e}")
+            break
+        if extra_df.empty:
+            print("[WARN] Empty DataFrame on reprompt, aborting.")
+            break
 
-    # **Finally**, truncate or warn if mismatched
+        before = synthetic_df.shape[0]
+        synthetic_df = pd.concat([synthetic_df, extra_df], ignore_index=True)
+        if synthetic_df.shape[0] == before:
+            print("[WARN] Reprompt did not increase row count, aborting.")
+            break
+        attempts += 1
+
+    # truncate to exactly required_n (or warn if still off)
     if synthetic_df.shape[0] > required_n:
         synthetic_df = synthetic_df.iloc[:required_n]
     if synthetic_df.shape[0] != required_n:
-        print(f"[WARNING] Final synthetic row count {synthetic_df.shape[0]} != required {required_n}")
+        print(f"[WARNING] Final row count {synthetic_df.shape[0]} != required {required_n}")
 
     synthetic_df.to_csv(output_csv, index=False)
     print(f"[INFO] Synthetic data saved to {output_csv}")
@@ -259,11 +266,11 @@ def process_dataset_llama(dataset_name, generator_name, model_name, model_temper
         logger.error(f"Error saving validation results: {e}")
 
 def main():
-    dataset_name = "abalone"
+    dataset_name = "auction-verification"
     generator_name = "llama"
     model_name = "llama-3.3-70b-versatile"
     model_temperature = 1.0  # Leave as 1.0 for highest diversity
-    batch_size = 32
+    batch_size = 64
 
     process_dataset_llama(
         dataset_name,
