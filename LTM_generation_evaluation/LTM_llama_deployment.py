@@ -282,7 +282,7 @@ def process_dataset_llama(dataset_name, generator_name, model_name, model_temper
         logger.error(f"Error saving validation results: {e}")
 
 def main():
-    dataset_name = "superconductivity"
+    dataset_name = "pumadyn32nh"
     generator_name = "llama"
     model_name = "llama-3.3-70b-versatile"
     model_temperature = 1.0  # Leave as 1.0 for highest diversity

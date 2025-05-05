@@ -154,5 +154,5 @@ def process_dataset_tabpfn(dataset_name: str,
 
 if __name__ == "__main__":
     # Change dataset_name to whatever you need
-    process_dataset_tabpfn("", generator_name="tabpfn", batch_size=200)
+    process_dataset_tabpfn("Moneyball", generator_name="tabpfn", batch_size=200)
  
