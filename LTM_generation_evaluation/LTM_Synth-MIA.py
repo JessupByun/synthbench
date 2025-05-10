@@ -13,7 +13,6 @@ from synth_mia.attackers import (
 SCRIPT_DIR   = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, os.pardir))
 
-
 def get_attackers():
     """Instantiate membership-inference attackers with default hyperparameters."""
     return [
@@ -145,8 +144,8 @@ def process_dataset_genmia(dataset_name: str, generator_name: str):
 
 
 def main():
-    dataset_name   = "abalone"   # e.g. "abalone"
-    generator_name = "llama"     # e.g. "tabpfn" or "llama"
+    dataset_name   = "health-insurance"   # e.g. "abalone"
+    generator_name = "tabpfn"     # e.g. "tabpfn" or "llama"
     process_dataset_genmia(dataset_name, generator_name)
 
 
