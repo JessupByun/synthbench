@@ -2,13 +2,9 @@
 
 ## Research Overview
 
-- **Undergraduate Researcher:** Jessup Byun, UCLA  
-- **Research Mentor:** Xiaofeng Lin, PhD Statistics, UCLA  
-- **Faculty Advisor:** Prof. Guang Cheng, UCLA Trustworthy AI Lab  
+This repository contains the codebase for my research conducted at the UCLA Trustworthy AI Lab, exploring synthetic tabular data generators with a specific focus on assessing the fidelity, utility, diversity, and privacy of synthetic data.
 
 ---
-
-This repository contains the codebase for my research conducted at the UCLA Trustworthy AI Lab, exploring synthetic tabular data generators with a specific focus on assessing the fidelity, utility, diversity, and privacy of synthetic data.
 
 ## Project Description
 
