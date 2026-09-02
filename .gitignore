@@ -14,6 +14,10 @@ LTM_data/
 # Raw attack outputs, result tables, and figures — large and regenerable
 LTM_evaluation/
 
+# Analysis helpers: table building, plotting, and result extraction.
+# Kept locally, not distributed — they read result trees that aren't shipped.
+analysis_helpers/
+
 # Superseded helper scripts and earlier experiments
 old_work/
 align_data.py

@@ -86,14 +86,18 @@ This repo holds the **code**, not the data. Everything below is what you need to
 re-run the benchmark yourself.
 
 ```
-LTM_generation_evaluation/   Generation and evaluation pipelines
-  LTM_llama_deployment.py      LLaMA 3.3 70B generation via Groq
-  LTM_tabpfn_deployment.py     TabPFN v2 generation
-  LTM_alfred_evaluation.py     Fidelity / utility / diversity pipeline
-  LTM_privacy_leakage.py       Worst-case-attacker privacy table
-  LTM_ablation_*.py            Prompt, temperature, and batch-size ablations
-  LTM_barplot_across_sizes.py, LTM_plot_privacy_tradeoffs.py    Figures
-  validate_synthetic_data.py   Schema and row-count checks on generated tables
+generation/                  Synthetic data generation
+  LTM_llama_deployment.py        LLaMA 3.3 70B generation via Groq
+  LTM_llama_deployment_2.py      LLaMA generation for the ablation runs
+  LTM_tabpfn_deployment.py       TabPFN v2 generation
+  validate_synthetic_data.py     Schema and row-count checks on generated tables
+
+evaluation/                  Fidelity, utility, and privacy evaluation
+  LTM_alfred_evaluation.py           Fidelity / utility / diversity pipeline
+  LTM_alfred_evaluation_ablation.py  Same pipeline over the ablation runs
+  LTM_privacy_leakage.py             Worst-case-attacker privacy table
+  LTM_ablation_dataset_selection.py  Picks the highest-risk datasets to ablate on
+  LTM_dataset_stats.py               Summary statistics for the benchmark datasets
 
 synth_mia_script_updates/    Membership-inference attack suite
   synth_mia/attackers/         Classifier, DCR, DCR-Diff, DOMIAS, DPI,
@@ -131,7 +135,7 @@ Each script has a config block or `main()` at the bottom where you set the datas
 generator. Run them from the repo root, in this order:
 
 ```bash
-python LTM_generation_evaluation/LTM_llama_deployment.py
+python generation/LTM_llama_deployment.py
 ```
 
 ```bash
@@ -139,12 +143,17 @@ python synth_mia_script_updates/LTM_Synth-MIA.py
 ```
 
 ```bash
-python LTM_generation_evaluation/LTM_alfred_evaluation.py
+python evaluation/LTM_alfred_evaluation.py
 ```
 
 ```bash
-python LTM_generation_evaluation/LTM_privacy_leakage.py
+python evaluation/LTM_privacy_leakage.py
 ```
+
+`LTM_privacy_leakage.py` reads a merged results table built from the attack and
+evaluation outputs; the local scripts that assemble that table and draw the paper's
+figures aren't distributed here, since they only operate on result trees that aren't
+shipped either.
 
 Everything here is open source and free to use for reproducing the experiments,
 evaluating synthetic data quality, or running your own privacy audit.
