@@ -1,14 +1,35 @@
-import sys, types
-
+#!/usr/bin/env python3
+import sys, types, os, pandas as pd
 # Stub out only the alpha_precision metric so it never gets imported
 sys.modules['evaluator.metrics.alpha_precision'] = types.ModuleType('evaluator.metrics.alpha_precision')
 sys.modules['evaluator.metrics.alpha_precision'].AlphaPrecision = type('AlphaPrecision', (), {})
 
-# Now it’s safe to import the rest
 from evaluator import EvaluationPipeline
-import os, pandas as pd
 
-# infer_column_types stays the same...
+# ===== USER CONFIGURATION =====
+GENERATOR_NAME = "llama"
+
+# Path to your real‐data TRAIN folder (full path, no dataset subfolder appended)
+REAL_TRAIN_DIR = "LTM_data/LTM_real_data/white-wine/train"
+# Path to your real‐data TEST folder (full path, no dataset subfolder appended)
+REAL_TEST_DIR  = "LTM_data/LTM_real_data/white-wine/test"
+
+# Path to the *parent* of all your synthetic splits:
+# e.g. if <…>/LTM_synthetic_data/LTM_llama_synthetic_data/synth_<ds>/*_llama_default_0.csv
+SYNTH_ROOT    = os.path.join("LTM_data", "LTM_synthetic_data", f"LTM_{GENERATOR_NAME}_synthetic_data")
+
+# Where to drop Alfred outputs:
+OUTPUT_ROOT   = os.path.join("LTM_evaluation", "LTM_alfred_evaluation", GENERATOR_NAME)
+
+# List your “ablation” folder names here (matching the synth_<name> folders)
+DATASET_NAMES = [
+    "white-wine_ablation_batchsize",
+    "white-wine_ablation_summarystats",
+    "white-wine_ablation_temp0.1",
+    "white-wine_ablation_temp0.5",
+]
+# ==============================
+
 def infer_column_types(df: pd.DataFrame,
                        cat_threshold: int = 50,
                        rel_cardinality: float = 0.05) -> dict:
@@ -28,22 +49,10 @@ def infer_column_types(df: pd.DataFrame,
             col_types[col] = "categorical"
     return col_types
 
-# anchor at the project root (where LTM_data lives)
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, os.pardir))
-
 def process_dataset_alfred(dataset_name: str, generator_name: str):
-    real_folder = os.path.join(PROJECT_ROOT, "LTM_data", "LTM_real_data", dataset_name, "train")
-    synth_folder = os.path.join(
-        PROJECT_ROOT,
-        "LTM_data", "LTM_synthetic_data",
-        f"LTM_{generator_name}_synthetic_data",
-        f"synth_{dataset_name}"
-    )
-    output_root = os.path.join(
-        PROJECT_ROOT, "LTM_evaluation", "LTM_alfred_evaluation",
-        generator_name, dataset_name
-    )
+    real_folder  = REAL_TRAIN_DIR
+    synth_folder = os.path.join(SYNTH_ROOT, f"synth_{dataset_name}")
+    output_root  = os.path.join(OUTPUT_ROOT, dataset_name)
 
     os.makedirs(output_root, exist_ok=True)
 
@@ -51,7 +60,7 @@ def process_dataset_alfred(dataset_name: str, generator_name: str):
     print(f"[INFO] Found {len(real_files)} real splits in {real_folder}")
 
     for real_fname in real_files:
-        base = os.path.splitext(real_fname)[0]
+        base       = os.path.splitext(real_fname)[0]
         real_path  = os.path.join(real_folder, real_fname)
         synth_fname = f"{base}_{generator_name}_default_0.csv"
         synth_path  = os.path.join(synth_folder, synth_fname)
@@ -61,20 +70,19 @@ def process_dataset_alfred(dataset_name: str, generator_name: str):
             continue
 
         print(f"[INFO] Evaluating subset {base} ...")
-        real_df  = pd.read_csv(real_path)
-        synth_df = pd.read_csv(synth_path)
+        real_df   = pd.read_csv(real_path)
+        synth_df  = pd.read_csv(synth_path)
 
         col_types     = infer_column_types(real_df)
         target_column = real_df.columns[-1]
 
         config = {
-            "target_column": target_column,
-            "metadata": col_types,
-            "holdout_seed": 42,
-            "holdout_size": 0.2,
+            "target_column":    target_column,
+            "metadata":         col_types,
+            "holdout_seed":     42,
+            "holdout_size":     0.2,
         }
 
-        # here's the one‐per‐subset folder
         subset_output = os.path.join(output_root, base)
         os.makedirs(subset_output, exist_ok=True)
 
@@ -89,20 +97,10 @@ def process_dataset_alfred(dataset_name: str, generator_name: str):
         print(f"[INFO] Finished {base} → {subset_output}")
 
 def main():
-    generator_name = "llama"
-    dataset_names = ["abalone"
-    
-    ]
-    """
-    "abalone", "airfoil-self-noise", "auction-verification", "brazilian-houses", "california-housing", "cars", "concrete-compressive-strength",
-    "cps88wages", "cpu-activity", "diamonds", "energy-efficiency", "fifa", "forest-fires", "fps-benchmark", "geographical-origin-of-music", "grid-stability", "health-insurance",
-    "kin8nm", "kings-county", "miami-housing", "Moneyball", "naval-propulsion-plant", "physiochemical-protein", "pumadyn32nh", "QSAR-fish-toxicity", "red-wine",
-    "sarcos", "socmob", "solar-flare", "space-ga", "student-performance-por", "superconductivity", "video-transcoding", "wave-energy", "white-wine"
-    """
-    for ds in dataset_names:
+    for ds in DATASET_NAMES:
         print(f"\n=== Processing dataset: {ds} ===")
         try:
-            process_dataset_alfred(ds, generator_name)
+            process_dataset_alfred(ds, GENERATOR_NAME)
         except Exception as e:
             print(f"[ERROR] Failed on {ds}: {e}")
 

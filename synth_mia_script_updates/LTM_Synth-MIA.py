@@ -3,15 +3,11 @@ import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import roc_auc_score
-from sklearn.preprocessing import LabelEncoder
 from synth_mia.attackers import (
     gen_lra, dcr, dpi, logan, dcr_diff, domias,
     mc, density_estimate, local_neighborhood, classifier
 )
-
-# Determine project root (assumes this script is in <project>/LTM_generation_evaluation/)
-SCRIPT_DIR   = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, os.pardir))
+from synth_mia.utils import tabular_preprocess
 
 def get_attackers():
     """Instantiate membership-inference attackers with default hyperparameters."""
@@ -22,28 +18,25 @@ def get_attackers():
         local_neighborhood(), classifier(),
     ]
 
-
 def process_dataset_genmia(dataset_name: str, generator_name: str):
     """
     For each CSV in LTM_data/LTM_real_data/{dataset_name}/train/:
       - split 50/50 into mem vs ref (seed=42)
       - load non_mem as the single CSV under LTM_data/LTM_real_data/{dataset_name}/test/
       - load matching synthetic CSV
-      - encode categoricals + keep numerics
-      - run membership-inference attacks
+      - run membership-inference attacks directly on the data
       - compute ROC AUC
       - save results
     """
     # Paths
-    train_folder = os.path.join(PROJECT_ROOT, "LTM_data", "LTM_real_data", dataset_name, "train")
-    test_folder  = os.path.join(PROJECT_ROOT, "LTM_data", "LTM_real_data", dataset_name, "test")
+    train_folder = "LTM_data/LTM_real_data/white-wine/train" #os.path.join("LTM_data", "LTM_real_data", dataset_name, "train")
+    test_folder = "LTM_data/LTM_real_data/white-wine/test" #os.path.join("LTM_data", "LTM_real_data", dataset_name, "test")
     synth_folder = os.path.join(
-        PROJECT_ROOT,
         "LTM_data", "LTM_synthetic_data",
         f"LTM_{generator_name}_synthetic_data",
         f"synth_{dataset_name}"
     )
-    output_root = os.path.join(PROJECT_ROOT, "LTM_evaluation", "LTM_Gen_MIA", generator_name, dataset_name)
+    output_root = os.path.join("LTM_evaluation", "LTM_Gen_MIA", generator_name, dataset_name)
     os.makedirs(output_root, exist_ok=True)
 
     # Check folders
@@ -68,56 +61,27 @@ def process_dataset_genmia(dataset_name: str, generator_name: str):
             continue
 
         base = os.path.splitext(train_fname)[0]
-        real_path  = os.path.join(train_folder, train_fname)
+        real_path = os.path.join(train_folder, train_fname)
         synth_fname = f"{base}_{generator_name}_default_0.csv"
-        synth_path  = os.path.join(synth_folder, synth_fname)
+        synth_path = os.path.join(synth_folder, synth_fname)
         if not os.path.isfile(synth_path):
             print(f"[WARN] Missing synthetic for {base}: {synth_path}")
             continue
 
-        # 1) Load and split real data
+        # 1) Load real data
         df = pd.read_csv(real_path)
+        
+        # 2) Split into mem and ref sets
         mem_df, ref_df = train_test_split(df, test_size=0.5, random_state=42, shuffle=True)
-
-        # 2) Identify numeric and categorical columns from real data
-        num_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-        cat_cols = [c for c in df.columns if c not in num_cols]
-
-        # 3) Fit label encoders on real data for categorical columns
-        encoders = {}
-        for c in cat_cols:
-            le = LabelEncoder()
-            le.fit(df[c].astype(str))
-            encoders[c] = le
-            # transform mem and ref
-            mem_df[c] = mem_df[c].astype(str).map(lambda v: le.transform([v])[0] if v in le.classes_ else -1)
-            ref_df[c] = ref_df[c].astype(str).map(lambda v: le.transform([v])[0] if v in le.classes_ else -1)
-
-        # 4) Load non_mem fresh for each iteration and encode it
+        
+        # 3) Load non_mem data
         non_mem_df = pd.read_csv(non_mem_path)
-        for c in cat_cols:
-            le = encoders[c]
-            non_mem_df[c] = non_mem_df[c].astype(str).map(
-                lambda v: le.transform([v])[0] if v in le.classes_ else -1
-            )
-
-        # 5) Load synthetic and encode categoricals
+        
+        # 4) Load synthetic data
         synth_df = pd.read_csv(synth_path)
-        for c in cat_cols:
-            le = encoders[c]
-            if c in synth_df.columns:
-                synth_df[c] = synth_df[c].astype(str).map(
-                    lambda v: le.transform([v])[0] if v in le.classes_ else -1
-                )
-            else:
-                synth_df[c] = -1
-
-        # 6) Build numpy arrays for attacks
-        feature_cols = num_cols + cat_cols
-        mem      = mem_df[feature_cols].values
-        ref      = ref_df[feature_cols].values
-        non_mem  = non_mem_df[feature_cols].values
-        synth    = synth_df[feature_cols].values
+        
+        # Take preprocessing for synthetic data, apply to all dataframes, return np arrays
+        mem, non_mem, synth, ref, transformer = tabular_preprocess(mem_df, non_mem_df, synth_df, ref_df, fit_target='synth', categorical_encoding='one-hot') #or categorical_encoding='ordinal')
 
         # DEBUG: check shapes before attacking
         print(f"[DEBUG] {base} shapes – mem: {mem.shape}, non_mem: {non_mem.shape}, synth: {synth.shape}, ref: {ref.shape}")
@@ -126,16 +90,16 @@ def process_dataset_genmia(dataset_name: str, generator_name: str):
         results = {}
         for attacker in attackers:
             try:
-                scores, raw_labels = attacker.attack(mem, non_mem, synth, ref)
-                true_labels = (raw_labels > 0.5).astype(int)
-                auc = roc_auc_score(true_labels, scores)
+                scores, true_labels = attacker.attack(mem, non_mem, synth, ref)
+                # Evaluate the attack
+                eval_results = attacker.eval(true_labels, scores, metrics=['roc'])
+                # Store results
+                results[attacker.name] = eval_results
             except Exception as e:
                 print(f"[ERROR] {attacker.name} on {base}: {e}")
-                auc = float('nan')
-            results[attacker.name] = auc
-
+                
         # 8) Save results
-        df_out = pd.DataFrame.from_dict(results, orient='index', columns=['roc_auc'])
+        df_out = pd.DataFrame.from_dict(results, orient='index')
         save_dir = os.path.join(output_root, base)
         os.makedirs(save_dir, exist_ok=True)
         out_csv = os.path.join(save_dir, 'mia_results.csv')
@@ -144,10 +108,20 @@ def process_dataset_genmia(dataset_name: str, generator_name: str):
 
 
 def main():
-    dataset_name   = "health-insurance"   # e.g. "abalone"
-    generator_name = "tabpfn"     # e.g. "tabpfn" or "llama"
-    process_dataset_genmia(dataset_name, generator_name)
-
+    generator_name = "llama"
+    dataset_names = ["white-wine_ablation_batchsize"]#, "white-wine_ablation_summarystats", "white-wine_ablation_temp0.1", "white-wine_ablation_temp0.5"]
+    """
+    "abalone", "airfoil-self-noise", "auction-verification", "brazilian-houses", "california-housing", "cars", "concrete-compressive-strength",
+    "cps88wages", "cpu-activity", "diamonds", "energy-efficiency", "fifa", "forest-fires", "fps-benchmark", "geographical-origin-of-music", "grid-stability", "health-insurance",
+    "kin8nm", "kings-county", "miami-housing", "Moneyball", "naval-propulsion-plant", "physiochemical-protein", "pumadyn32nh", "QSAR-fish-toxicity", "red-wine",
+    "sarcos", "socmob", "solar-flare", "space-ga", "student-performance-por", "superconductivity", "video-transcoding", "wave-energy", "white-wine"
+    """
+    for ds in dataset_names:
+        print(f"\n=== Processing dataset: {ds} ===")
+        try:
+            process_dataset_genmia(ds, generator_name)
+        except Exception as e:
+            print(f"[ERROR] Failed on {ds}: {e}")
 
 if __name__ == "__main__":
     main()

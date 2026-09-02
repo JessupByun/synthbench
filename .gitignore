@@ -1,11 +1,21 @@
+# Environments and local cruft
 .venv/
 .venv310/
 .env
 .DS_Store
 workspace/
+__pycache__/
+*.py[cod]
 
-# Ignore private datasets
-data/real_data/private_combined_df_cty_week2
-data/real_data/private_labMergeDemo1Trimmed
-data/real_data/private_nationscape_indv
+# Datasets: real splits and generated synthetic tables are not distributed.
+# Real datasets are public benchmarks; synthetic tables are regenerable.
+LTM_data/
 
+# Raw attack outputs, result tables, and figures — large and regenerable
+LTM_evaluation/
+
+# Superseded helper scripts and earlier experiments
+old_work/
+align_data.py
+dropNANS.py
+drop_rows.py

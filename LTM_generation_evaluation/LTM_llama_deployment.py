@@ -25,9 +25,7 @@ prompt_template = (
 
     Dataset name: {dataset_name}
     Please output data with exactly these column names in this order: {col_names}
-    Enclose any non-numeric cell (e.g. “between … and …”) in double-quotes.
     Do not emit trailing commas or extra columns.  
-    Summary statistics and information about numerical and categorical columns: {summary_stats}
     Here is the CSV of the full data: {data}
     Please generate {batch_size} rows of synthetic data for the dataset. 
 
@@ -36,6 +34,7 @@ prompt_template = (
     """
 )
 
+#    Summary statistics and information about numerical and categorical columns: {summary_stats}
 def get_summary_statistics(df):
     """
     Computes a comprehensive set of summary statistics for each column in the DataFrame.
@@ -284,11 +283,11 @@ def process_dataset_llama(dataset_name, generator_name, model_name, model_temper
         logger.error(f"Error saving validation results: {e}")
 
 def main():
-    dataset_name = "superconductivity"
+    dataset_name = "white-wine"
     generator_name = "llama"
     model_name = "llama-3.3-70b-versatile"
     model_temperature = 1.0  # Leave as 1.0 for highest diversity
-    batch_size = 4
+    batch_size = 32
 
     process_dataset_llama(
         dataset_name,

@@ -1,61 +1,168 @@
-# tabular synthetic data research
+# Risk in Context: Benchmarking Privacy Leakage of Foundation Models in Synthetic Tabular Data Generation
 
-## Research Overview
+**Jessup Byun · Xiaofeng Lin · Joshua Ward · Guang Cheng** — UCLA Trustworthy AI Lab
 
-This repository contains the codebase for my research conducted at the UCLA Trustworthy AI Lab, exploring synthetic tabular data generators with a specific focus on assessing the fidelity, utility, diversity, and privacy of synthetic data.
+[![arXiv](https://img.shields.io/badge/arXiv-2507.17066-b31b1b.svg)](https://doi.org/10.48550/arXiv.2507.17066)
+
+📄 **Paper:** https://doi.org/10.48550/arXiv.2507.17066
+
+Accepted to the **KDD 2025 Workshop on Trustworthy Agentic and Generative AI Evaluation**,
+where I gave an oral presentation in Toronto, Canada.
+
+```bibtex
+@misc{byun2025riskincontext,
+  title         = {Risk In Context: Benchmarking Privacy Leakage of Foundation Models
+                   in Synthetic Tabular Data Generation},
+  author        = {Byun, Jessup and Lin, Xiaofeng and Ward, Joshua and Cheng, Guang},
+  year          = {2025},
+  eprint        = {2507.17066},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.LG},
+  doi           = {10.48550/arXiv.2507.17066}
+}
+```
 
 ---
 
-## Project Description
+## What I looked at
 
-The research systematically benchmarks foundation-model-based in-context learning (ICL) tabular generators—specifically GPT-4o-mini, LLaMA 3.3 70B, and TabPFN v2—against established deep generative models (GANs, VAEs, and diffusion models), including CTGAN, TVAE, TabDiff, and SMOTE. The primary aim is to evaluate these models under low-data conditions, which are particularly challenging for traditional synthetic data generation approaches.
+Synthetic tabular data is usually sold as a privacy solution: release the synthetic
+table instead of the real one and the risk goes away. Foundation models have recently
+been dropped into that role, especially in the **low-data regime** where classical
+generators struggle and where practitioners in health, finance, and social science
+actually work.
 
-## Methodology
+I wanted to know whether that pitch holds up. So I benchmarked foundation-model
+in-context learning generators — GPT-4o-mini, LLaMA 3.3 70B, and TabPFN v2 — against
+established deep generative baselines (CTGAN, TVAE, TabDiff) and SMOTE, and measured
+fidelity, downstream utility, and privacy leakage side by side under small real-data
+budgets.
 
-### Synthetic Data Generators
+## What I found
 
-#### Foundation models via In-Context Learning (ICL):
+**Foundation models deliver on quality, but not on privacy.** Under low-data conditions
+they produced the highest-fidelity, most useful synthetic tables in the study — and
+they leaked. Getting good synthetic data and getting private synthetic data turned out
+to be separate problems, and the first does not imply the second.
 
-**GPT-4o-mini:** Utilizes structured prompts containing dataset schema, statistical summaries, and seed examples to generate synthetic rows without model retraining.
+**LLaMA 3.3 70B leaked the most.** It was the strongest generator on several quality
+axes and simultaneously the most vulnerable to membership-inference attacks. That
+pairing is the core tension in the paper: the models most worth using in the low-data
+regime are the ones I'd most hesitate to release output from.
 
-**LLaMA 3.3 70B:** Similar in approach to GPT-4o-mini but implemented using the open-source LLaMA model.
+**Worst-case matters more than average-case.** I evaluated privacy as the worst-case
+result across a suite of membership-inference attacks rather than a single attack or a
+mean. Averaging hides the datasets and records where leakage is severe, and no single
+attack is the strongest one everywhere — which attack wins depends on the generator.
 
-**TabPFN v2:** Employs autoregressive sampling for generating features sequentially based on previously sampled features.
+**Prompt-level knobs help, and they're cheap.** Reducing batch size, lowering sampling
+temperature, and including summary statistics in the prompt all measurably reduced
+leakage while preserving most of the fidelity gains. These are configuration changes,
+not retraining — which makes them practical to adopt. They mitigate rather than
+eliminate the risk.
 
-#### Data-specific Generators (trained per dataset):
+**The takeaway I'd give a practitioner:** don't treat "we used a foundation model" as a
+privacy argument. Audit your own generator, on your own data, at your own sample size,
+against a worst-case multi-attack evaluation — and be especially wary of SMOTE as a
+"safe" low-data baseline.
 
-**TabDiff:** Uses diffusion processes tailored to numerical and categorical features.
+## How the benchmark works
 
-**CTGAN and TVAE:** Utilize GAN and VAE frameworks, respectively, tailored specifically for mixed-type tabular data.
+**Generators.** Foundation models via in-context learning: GPT-4o-mini and LLaMA 3.3
+70B are prompted with the dataset schema, summary statistics, and seed rows to emit
+synthetic records with no retraining; TabPFN v2 samples features autoregressively.
+Data-specific baselines trained per dataset: TabDiff (diffusion over mixed numerical
+and categorical features), CTGAN and TVAE (GAN and VAE for tabular data), and SMOTE
+(k-nearest-neighbor interpolation).
 
-**SMOTE:** A k-nearest neighbor interpolation method primarily designed for class imbalance issues.
+**Metrics.** Statistical fidelity via marginal and joint distribution similarity;
+downstream utility via classifiers (logistic regression, decision tree, random forest,
+XGBoost, CatBoost) scored with macro-average R² and ROC AUC; privacy leakage via
+worst-case membership-inference attack ROC AUC.
 
-## Evaluation Metrics
+## Repository layout
 
-The models are evaluated across three key dimensions:
+This repo holds the **code**, not the data. Everything below is what you need to
+re-run the benchmark yourself.
 
-**Statistical Fidelity:** Measured via marginal and joint distribution similarities.
+```
+LTM_generation_evaluation/   Generation and evaluation pipelines
+  LTM_llama_deployment.py      LLaMA 3.3 70B generation via Groq
+  LTM_tabpfn_deployment.py     TabPFN v2 generation
+  LTM_alfred_evaluation.py     Fidelity / utility / diversity pipeline
+  LTM_privacy_leakage.py       Worst-case-attacker privacy table
+  LTM_ablation_*.py            Prompt, temperature, and batch-size ablations
+  LTM_barplot_across_sizes.py, LTM_plot_privacy_tradeoffs.py    Figures
+  validate_synthetic_data.py   Schema and row-count checks on generated tables
 
-**Downstream Utility:** Assessed through machine learning classifiers (logistic regression, decision tree, random forest, XGBoost, CatBoost) evaluated with macro-average R^2 and ROC AUC scores.
+synth_mia_script_updates/    Membership-inference attack suite
+  synth_mia/attackers/         Classifier, DCR, DCR-Diff, DOMIAS, DPI,
+                               Density Estimator, Gen-LRA, Local Neighborhood, LOGAN, MC
+  LTM_Synth-MIA.py             Attack runner (with reference data)
+  LTM_Synth-MIA_no_reference.py  Attack runner (no reference data)
+```
 
-**Privacy Leakage:** Quantified by worst-case membership-inference attacks (MIAs), measuring leakage via ROC AUC performance.
+Three directories the scripts expect but that aren't distributed here:
+`LTM_data/LTM_real_data/` (train/test splits per dataset and sample size — the real
+datasets are public tabular benchmarks, cited in the paper), `LTM_data/LTM_synthetic_data/`
+(generated tables), and `LTM_evaluation/` (raw attack outputs, result tables, figures).
+All three are large and fully regenerable from the scripts above. Point the scripts at
+your own data laid out the same way.
 
-## Key Findings
+## Setup
 
-Foundation models achieve high fidelity and utility, particularly beneficial under low-data scenarios, yet pose significant privacy risks.
+```bash
+python3.10 -m venv .venv && source .venv/bin/activate
+```
 
-LLaMA 3.3 70B demonstrated the highest privacy leakage compared to other models.
+```bash
+pip install pandas numpy scikit-learn torch matplotlib tabulate python-dotenv groq tabpfn-extensions
+```
 
-Simple prompt-level adjustments—such as reducing batch size, lowering sampling temperature, and including summary statistics—effectively mitigate privacy risks while maintaining a substantial portion of data fidelity.
+LLaMA generation runs through the Groq API — add your key to a `.env` at the repo root:
 
-## Contributions and Publication
+```bash
+echo "GROQ_API_KEY=your_key_here" > .env
+```
 
-This work culminated in a comprehensive benchmarking of privacy leakage across synthetic data generators and was accepted to the *KDD 2025 Workshop on Trustworthy Agentic and Generative AI Evaluation* with an an oral presentation session which was delivered in Toronto, Canada. Access the paper here: https://doi.org/10.48550/arXiv.2507.17066
+## Reproducing the experiments
 
-## Usage
+Each script has a config block or `main()` at the bottom where you set the dataset and
+generator. Run them from the repo root, in this order:
 
-The repository includes open-source free-to-use scripts for reproducing experiments, evaluating synthetic data quality, and performing privacy leakage audits.
+```bash
+python LTM_generation_evaluation/LTM_llama_deployment.py
+```
 
-## Future Work
+```bash
+python synth_mia_script_updates/LTM_Synth-MIA.py
+```
 
-Planned extensions include exploring additional attack models, integrating differential privacy techniques, and automated prompt optimization to further improve the safety and efficacy of tabular synthetic data generation.
+```bash
+python LTM_generation_evaluation/LTM_alfred_evaluation.py
+```
+
+```bash
+python LTM_generation_evaluation/LTM_privacy_leakage.py
+```
+
+Everything here is open source and free to use for reproducing the experiments,
+evaluating synthetic data quality, or running your own privacy audit.
+
+## Future work
+
+Extending the attack suite, integrating differential privacy into the generation
+pipelines, and automating prompt optimization so the mitigations above can be tuned
+per dataset rather than chosen by hand.
+
+## People and credits
+
+- **Jessup Byun** — Undergraduate Researcher, UCLA
+- **Xiaofeng Lin** — PhD, Statistics, UCLA (research mentor)
+- **Joshua Ward** — UCLA Trustworthy AI Lab
+- **Prof. Guang Cheng** — Faculty Advisor, UCLA Trustworthy AI Lab
+
+The attack suite builds on [synth-mia](https://github.com/safe-data-sharing/synth-mia).
+Prompt design for LLM generation is adapted from example B.5 of *Curated LLM: Synergy
+of LLMs and Data Curation for Tabular Augmentation in Low-Data Regimes* (Seedat, Huynh,
+et al., [arXiv:2312.12112](https://arxiv.org/abs/2312.12112)).
